@@ -305,6 +305,7 @@ function playTrack(track) {
   if (!track || !/^[\w-]{6,20}$/.test(track.id)) return;
   state.currentTrack = track;
   playbackWanted = true;
+  startKeepAlive();
   state.history = [track, ...state.history.filter((item) => item.id !== track.id)].slice(0, 50);
   persist();
   updateMediaSession(track);
@@ -355,6 +356,31 @@ let playbackWanted = false;
 let resumeOnReturn = false;
 let mediaSessionActionsRegistered = false;
 
+let keepAliveAudio;
+function getKeepAliveAudio() {
+  if (keepAliveAudio) return keepAliveAudio;
+  // ~1s of silent 8kHz mono 8-bit PCM WAV, looped, so the browser treats the tab as an active media session
+  const samples = 8000, header = 44, bytes = new Uint8Array(header + samples);
+  const dv = new DataView(bytes.buffer);
+  const w = (o, t) => [...t].forEach((c, i) => bytes[o + i] = c.charCodeAt(0));
+  w(0, 'RIFF'); dv.setUint32(4, 36 + samples, true); w(8, 'WAVE'); w(12, 'fmt ');
+  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+  dv.setUint32(24, 8000, true); dv.setUint32(28, 8000, true); dv.setUint16(32, 1, true); dv.setUint16(34, 8, true);
+  w(36, 'data'); dv.setUint32(40, samples, true); bytes.fill(128, header);
+  let bin = ''; bytes.forEach((b) => bin += String.fromCharCode(b));
+  keepAliveAudio = new Audio('data:audio/wav;base64,' + btoa(bin));
+  keepAliveAudio.loop = true;
+  keepAliveAudio.volume = 0.01;
+  return keepAliveAudio;
+}
+function startKeepAlive() { try { getKeepAliveAudio().play().catch(() => {}); } catch {} }
+function stopKeepAlive() { try { keepAliveAudio?.pause(); } catch {} }
+function resumeIfInterrupted() {
+  if (!playbackWanted || !youtubePlayer?.getPlayerState) return;
+  if (youtubePlayer.getPlayerState() !== window.YT?.PlayerState.PLAYING) youtubePlayer.playVideo();
+}
+setInterval(() => { if (document.hidden) resumeIfInterrupted(); }, 1000);
+
 function setMediaSessionState(value) {
   if (!navigator.mediaSession) return;
   try { navigator.mediaSession.playbackState = value; } catch {}
@@ -364,8 +390,8 @@ function registerMediaSessionActions() {
   const session = navigator.mediaSession;
   if (!session || mediaSessionActionsRegistered) return;
   const actions = {
-    play: () => { playbackWanted = true; youtubePlayer?.playVideo(); },
-    pause: () => { playbackWanted = false; youtubePlayer?.pauseVideo(); },
+    play: () => { playbackWanted = true; startKeepAlive(); youtubePlayer?.playVideo(); },
+    pause: () => { playbackWanted = false; stopKeepAlive(); youtubePlayer?.pauseVideo(); },
     previoustrack: playPreviousTrack,
     nexttrack: playNextQueued,
     seekto: (details) => { if (Number.isFinite(details.seekTime)) youtubePlayer?.seekTo(details.seekTime, true); },
@@ -454,9 +480,13 @@ function createYoutubePlayer(track) {
       },
       onStateChange: (event) => {
         if (event.data === window.YT.PlayerState.PLAYING) setPlayControl(true);
-        if (event.data === window.YT.PlayerState.PAUSED) setPlayControl(false);
+        if (event.data === window.YT.PlayerState.PAUSED) {
+          setPlayControl(false);
+          if (playbackWanted && document.hidden) setTimeout(resumeIfInterrupted, 150);
+        }
         if (event.data === window.YT.PlayerState.ENDED && !playNextQueued()) {
           playbackWanted = false;
+          stopKeepAlive();
           setMediaSessionState('none');
         }
       },
@@ -780,9 +810,11 @@ document.getElementById('playPause').addEventListener('click', () => {
   if (!youtubePlayer) return;
   if (youtubePlayer.getPlayerState() === window.YT.PlayerState.PLAYING) {
     playbackWanted = false;
+    stopKeepAlive();
     youtubePlayer.pauseVideo();
   } else {
     playbackWanted = true;
+    startKeepAlive();
     youtubePlayer.playVideo();
   }
 });
@@ -910,6 +942,7 @@ window.addEventListener('hashchange', () => applyRoute());
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     resumeOnReturn = playbackWanted;
+    setTimeout(resumeIfInterrupted, 300);
     return;
   }
   if (!resumeOnReturn) return;
