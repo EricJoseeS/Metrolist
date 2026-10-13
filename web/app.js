@@ -28,6 +28,7 @@ const state = {
   albumLoadingId: null,
   albumError: '',
   library: Array.isArray(saved.library) ? saved.library : [],
+  savedArtists: Array.isArray(saved.savedArtists) ? saved.savedArtists : [],
   playlists: Array.isArray(saved.playlists) ? saved.playlists : [],
   queue: Array.isArray(saved.queue) ? saved.queue : [],
   history: Array.isArray(saved.history) ? saved.history : [],
@@ -49,6 +50,8 @@ const mainView = document.getElementById('mainView');
 const searchInput = document.getElementById('searchInput');
 let toastTimer;
 
+document.body.append(document.getElementById('playerMount'));
+
 function escapeHtml(value = '') {
   return String(value).replace(/[&<>"']/g, (character) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -58,6 +61,7 @@ function escapeHtml(value = '') {
 function persist() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({
     library: state.library,
+    savedArtists: state.savedArtists,
     playlists: state.playlists,
     queue: state.queue,
     history: state.history.slice(0, 50),
@@ -179,7 +183,8 @@ function renderArtist() {
   const page = state.artistPage;
   if (!page || page.artist.id !== state.artistId) return sectionHeading('ARTIST', 'Loading profile…');
   const image = page.artist.artwork ? `<img src="${escapeHtml(page.artist.artwork)}" alt="" />` : '<span>♪</span>';
-  return `<section class="profile-hero"><div class="profile-art">${image}</div><div class="profile-copy"><span class="eyebrow">ARTIST</span><h1>${escapeHtml(page.artist.title)}</h1><p>${escapeHtml(page.artist.monthlyListeners || 'YouTube Music artist')}</p>${page.artist.description ? `<div class="profile-description">${escapeHtml(page.artist.description)}</div>` : ''}</div></section>
+  const artistSaved = state.savedArtists.some((artist) => artist.id === page.artist.id);
+  return `<section class="profile-hero"><div class="profile-art">${image}</div><div class="profile-copy"><span class="eyebrow">ARTIST</span><h1>${escapeHtml(page.artist.title)}</h1><p>${escapeHtml(page.artist.monthlyListeners || 'YouTube Music artist')}</p><button class="button-secondary artist-save" data-action="save-artist" data-id="${escapeHtml(page.artist.id)}">${artistSaved ? '♥ Saved artist' : '♡ Save artist'}</button>${page.artist.description ? `<div class="profile-description">${escapeHtml(page.artist.description)}</div>` : ''}</div></section>
     <section class="content-section"><div class="section-title"><div><span class="eyebrow">TOP TRACKS</span><h2>Songs</h2></div></div>${trackTable(page.songs, 'results')}</section>${entityCards(page.albums, 'album')}`;
 }
 
@@ -235,8 +240,8 @@ async function loadAlbum(id) {
 }
 
 function renderLibrary() {
-  return `${sectionHeading('YOUR COLLECTION', 'Library', `${state.library.length} saved ${state.library.length === 1 ? 'song' : 'songs'}`)}
-    <div class="library-toolbar"><button class="button-secondary" id="exportLibrary">Export library</button><button class="button-secondary" id="importLibraryButton">Import library</button><input id="importLibrary" type="file" accept="application/json" hidden /></div>${trackTable(state.library, 'library')}`;
+  return `${sectionHeading('YOUR COLLECTION', 'Library', `${state.library.length} saved songs · ${state.savedArtists.length} saved artists`)}
+    <div class="library-toolbar"><button class="button-secondary" id="exportLibrary">Export library</button><button class="button-secondary" id="importLibraryButton">Import library</button><input id="importLibrary" type="file" accept="application/json" hidden /></div><section class="content-section"><div class="section-title"><div><span class="eyebrow">SAVED MUSIC</span><h2>Songs</h2></div></div>${trackTable(state.library, 'library')}</section><section class="content-section"><div class="section-title"><div><span class="eyebrow">SAVED MUSIC</span><h2>Artists</h2></div></div>${state.savedArtists.length ? entityCards(state.savedArtists, 'artist') : '<div class="inline-empty">Save artists from their profile to see them here.</div>'}</section>`;
 }
 
 function renderPlaylist() {
@@ -292,11 +297,17 @@ function findTrack(id) {
   return [...state.results, ...(state.artistPage?.songs || []), ...(state.albumPage?.songs || []), state.currentTrack, ...state.library, ...state.history, ...state.queue, ...state.playlists.flatMap((item) => item.tracks)].find((track) => track?.id === id);
 }
 
+function findArtist(id) {
+  return [...state.artists, ...(state.artistPage ? [state.artistPage.artist] : []), ...state.savedArtists].find((artist) => artist.id === id);
+}
+
 function playTrack(track) {
   if (!track || !/^[\w-]{6,20}$/.test(track.id)) return;
   state.currentTrack = track;
+  playbackWanted = true;
   state.history = [track, ...state.history.filter((item) => item.id !== track.id)].slice(0, 50);
   persist();
+  updateMediaSession(track);
   startVideo(track);
   updatePlayerMeta();
   if (state.lyricsOpen) loadLyrics(true);
@@ -309,8 +320,16 @@ function updatePlayerMeta() {
   const artist = track?.artist || (state.currentTrack ? '' : 'Your next track will appear here');
   document.getElementById('nowPlayingTitle').textContent = title;
   document.getElementById('nowPlayingArtist').textContent = artist;
-  document.getElementById('barTitle').textContent = title;
-  document.getElementById('barArtist').textContent = track ? artist : 'Search to find music';
+  const barTitle = document.getElementById('barTitle');
+  barTitle.textContent = title;
+  barTitle.disabled = !track;
+  barTitle.setAttribute('aria-label', track ? `Open player for ${title}` : title);
+  const barArtist = document.getElementById('barArtist');
+  barArtist.textContent = track ? artist : 'Search to find music';
+  barArtist.disabled = !track?.artistId;
+  barArtist.dataset.action = track?.artistId ? 'open-artist' : '';
+  barArtist.dataset.id = track?.artistId || '';
+  barArtist.setAttribute('aria-label', track?.artistId ? `Open ${artist} artist profile` : artist);
   const coverImage = document.getElementById('coverImage');
   const coverPlaceholder = document.getElementById('coverPlaceholder');
   coverImage.hidden = !track?.artwork;
@@ -332,6 +351,60 @@ let pendingVideo;
 let youtubeApiLoading = false;
 let playbackClock;
 let isMuted = false;
+let playbackWanted = false;
+let resumeOnReturn = false;
+let mediaSessionActionsRegistered = false;
+
+function setMediaSessionState(value) {
+  if (!navigator.mediaSession) return;
+  try { navigator.mediaSession.playbackState = value; } catch {}
+}
+
+function registerMediaSessionActions() {
+  const session = navigator.mediaSession;
+  if (!session || mediaSessionActionsRegistered) return;
+  const actions = {
+    play: () => { playbackWanted = true; youtubePlayer?.playVideo(); },
+    pause: () => { playbackWanted = false; youtubePlayer?.pauseVideo(); },
+    previoustrack: playPreviousTrack,
+    nexttrack: playNextQueued,
+    seekto: (details) => { if (Number.isFinite(details.seekTime)) youtubePlayer?.seekTo(details.seekTime, true); },
+    seekbackward: (details) => seekBy(-(details.seekOffset || 10)),
+    seekforward: (details) => seekBy(details.seekOffset || 10),
+  };
+  for (const [action, handler] of Object.entries(actions)) {
+    try { session.setActionHandler(action, handler); } catch {}
+  }
+  mediaSessionActionsRegistered = true;
+}
+
+function updateMediaSession(track) {
+  if (!navigator.mediaSession) return;
+  registerMediaSessionActions();
+  if ('MediaMetadata' in window) {
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: track.title,
+        artist: track.artist || 'YouTube Music',
+        album: track.album || 'Metrolist',
+        artwork: track.artwork ? [{ src: track.artwork, sizes: '512x512' }] : [],
+      });
+    } catch {}
+  }
+  setMediaSessionState('playing');
+}
+
+function seekBy(offset) {
+  if (!youtubePlayer?.getCurrentTime || !youtubePlayer?.getDuration) return;
+  const target = Math.max(0, Math.min(youtubePlayer.getDuration(), youtubePlayer.getCurrentTime() + offset));
+  youtubePlayer.seekTo(target, true);
+}
+
+function playPreviousTrack() {
+  const previous = state.history.find((track) => track.id !== state.currentTrack?.id);
+  if (previous) playTrack(previous);
+  else toast('No previous track');
+}
 
 function startVideo(track) {
   pendingVideo = track;
@@ -382,7 +455,10 @@ function createYoutubePlayer(track) {
       onStateChange: (event) => {
         if (event.data === window.YT.PlayerState.PLAYING) setPlayControl(true);
         if (event.data === window.YT.PlayerState.PAUSED) setPlayControl(false);
-        if (event.data === window.YT.PlayerState.ENDED) playNextQueued();
+        if (event.data === window.YT.PlayerState.ENDED && !playNextQueued()) {
+          playbackWanted = false;
+          setMediaSessionState('none');
+        }
       },
     },
   });
@@ -393,6 +469,7 @@ function setPlayControl(playing) {
   button.textContent = playing ? 'Ⅱ' : '▶';
   button.title = playing ? 'Pause' : 'Play';
   button.setAttribute('aria-label', button.title);
+  setMediaSessionState(playing ? 'playing' : 'paused');
 }
 
 function formatPlaybackTime(seconds) {
@@ -411,6 +488,9 @@ function updatePlayback() {
   if (duration > 0 && document.activeElement !== document.getElementById('seekSlider')) {
     document.getElementById('seekSlider').value = String(Math.round((current / duration) * 1000));
   }
+  try {
+    navigator.mediaSession?.setPositionState({ duration, position: current, playbackRate: youtubePlayer.getPlaybackRate?.() || 1 });
+  } catch {}
   updateActiveLyric();
 }
 
@@ -575,6 +655,16 @@ function toggleSaved(track) {
   toast(existing ? 'Removed from library' : 'Saved to library');
 }
 
+function toggleSavedArtist(artist) {
+  const exists = state.savedArtists.some((item) => item.id === artist.id);
+  state.savedArtists = exists
+    ? state.savedArtists.filter((item) => item.id !== artist.id)
+    : [{ id: artist.id, title: artist.title, artwork: artist.artwork || '' }, ...state.savedArtists];
+  persist();
+  render();
+  toast(exists ? 'Artist removed from library' : 'Artist saved to library');
+}
+
 function addToQueue(track) {
   if (state.queue.some((item) => item.id === track.id)) return toast('Already in queue');
   state.queue.push(track);
@@ -596,8 +686,13 @@ function createPlaylist() {
 function handleAction(button) {
   const { action, id } = button.dataset;
   const track = id ? findTrack(id) : null;
+  if (action === 'open-player' && window.matchMedia('(max-width: 880px)').matches) setMobilePlayerOpen(true);
   if (action === 'open-artist') routeTo('artist', id);
   if (action === 'open-album') routeTo('album', id);
+  if (action === 'save-artist') {
+    const artist = findArtist(id);
+    if (artist) toggleSavedArtist(artist);
+  }
   if (action === 'provider-up' || action === 'provider-down') {
     const index = state.lyricsOrder.indexOf(id);
     const destination = index + (action === 'provider-up' ? -1 : 1);
@@ -679,14 +774,17 @@ document.getElementById('nextTrack').addEventListener('click', () => {
   if (!playNextQueued()) toast('Your queue is empty');
 });
 document.getElementById('previousTrack').addEventListener('click', () => {
-  const previous = state.history.find((track) => track.id !== state.currentTrack?.id);
-  if (previous) playTrack(previous);
-  else toast('No previous track');
+  playPreviousTrack();
 });
 document.getElementById('playPause').addEventListener('click', () => {
   if (!youtubePlayer) return;
-  if (youtubePlayer.getPlayerState() === window.YT.PlayerState.PLAYING) youtubePlayer.pauseVideo();
-  else youtubePlayer.playVideo();
+  if (youtubePlayer.getPlayerState() === window.YT.PlayerState.PLAYING) {
+    playbackWanted = false;
+    youtubePlayer.pauseVideo();
+  } else {
+    playbackWanted = true;
+    youtubePlayer.playVideo();
+  }
 });
 document.getElementById('seekSlider').addEventListener('change', (event) => {
   const duration = youtubePlayer?.getDuration?.() || 0;
@@ -767,14 +865,14 @@ mainView.addEventListener('click', (event) => {
   if (lyricLine && youtubePlayer?.seekTo) youtubePlayer.seekTo(state.lyricsLines[Number(lyricLine.dataset.lyricIndex)]?.time || 0, true);
   if (event.target.id === 'exportLibrary') exportLibrary();
   if (event.target.id === 'importLibraryButton') document.getElementById('importLibrary').click();
-  if (event.target.id === 'clearData' && confirm('Clear saved songs, playlists, queue, and history from this browser?')) {
-    state.library = []; state.playlists = []; state.queue = []; state.history = [];
+  if (event.target.id === 'clearData' && confirm('Clear saved songs, artists, playlists, queue, and history from this browser?')) {
+    state.library = []; state.savedArtists = []; state.playlists = []; state.queue = []; state.history = [];
     persist(); render(); toast('Browser library cleared');
   }
 });
 
 function exportLibrary() {
-  const backup = { version: 1, library: state.library, playlists: state.playlists };
+  const backup = { version: 1, library: state.library, savedArtists: state.savedArtists, playlists: state.playlists };
   const link = document.createElement('a');
   link.href = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' }));
   link.download = 'metrolist-library.json';
@@ -788,6 +886,9 @@ async function importLibrary(file) {
     const backup = JSON.parse(await file.text());
     if (!Array.isArray(backup.library) || !Array.isArray(backup.playlists)) throw new Error('Invalid Metrolist library file');
     state.library = backup.library.filter((track) => track && typeof track.id === 'string' && typeof track.title === 'string');
+    state.savedArtists = Array.isArray(backup.savedArtists)
+      ? backup.savedArtists.filter((artist) => artist && typeof artist.id === 'string' && typeof artist.title === 'string')
+      : [];
     state.playlists = backup.playlists.filter((playlist) => playlist && typeof playlist.name === 'string' && Array.isArray(playlist.tracks));
     persist(); render(); toast('Library imported');
   } catch (error) {
@@ -806,6 +907,17 @@ document.addEventListener('keydown', (event) => {
 });
 
 window.addEventListener('hashchange', () => applyRoute());
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    resumeOnReturn = playbackWanted;
+    return;
+  }
+  if (!resumeOnReturn) return;
+  resumeOnReturn = false;
+  if (playbackWanted && youtubePlayer?.getPlayerState && youtubePlayer.getPlayerState() !== window.YT?.PlayerState.PLAYING) {
+    youtubePlayer.playVideo();
+  }
+});
 searchInput.addEventListener('focus', () => {
   if (state.view !== 'search') routeTo('search');
 });
