@@ -3,7 +3,6 @@ services:
     name: metrolist-web
     runtime: node
     plan: free
-    rootDir: web
     buildCommand: npm install --omit=dev
     startCommand: npm start
     healthCheckPath: /
@@ -12,3 +11,5 @@ services:
         value: 0.0.0.0
       - key: NODE_ENV
         value: production
+      - key: NODE_VERSION
+        value: "22"
