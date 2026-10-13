@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f3f5f4" />
+    <title>Metrolist</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="desktop.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="#home" aria-label="Metrolist home">
+          <span class="brand-mark">m</span>
+          <span class="brand-name">metrolist</span>
+        </a>
+        <nav class="primary-nav" aria-label="Main navigation">
+          <button class="nav-item is-active" data-view="home"><span class="nav-icon">⌂</span>Home</button>
+          <button class="nav-item" data-view="search"><span class="nav-icon">⌕</span>Search</button>
+          <button class="nav-item" data-view="library"><span class="nav-icon">▤</span>Library</button>
+          <button class="nav-item" data-view="history"><span class="nav-icon">◷</span>History</button>
+        </nav>
+        <div class="sidebar-heading">
+          <span>Your playlists</span>
+          <button class="icon-action" id="createPlaylist" title="Create playlist" aria-label="Create playlist">+</button>
+        </div>
+        <div class="playlist-list" id="playlistList"></div>
+        <div class="sidebar-spacer"></div>
+        <button class="nav-item settings-nav" data-view="settings"><span class="nav-icon">⚙</span>Settings</button>
+        <div class="account-chip"><span class="account-avatar">M</span><span><strong>Local library</strong><small>Saved in this browser</small></span></div>
+      </aside>
+
+      <main class="main-column">
+        <header class="topbar">
+          <div class="history-controls" aria-label="Page history">
+            <button class="icon-action" id="goBack" title="Back" aria-label="Back">‹</button>
+            <button class="icon-action" id="goForward" title="Forward" aria-label="Forward">›</button>
+          </div>
+          <form class="search-form" id="searchForm" role="search">
+            <span aria-hidden="true">⌕</span>
+            <input id="searchInput" type="search" placeholder="Search songs, artists, albums" autocomplete="off" aria-label="Search music" />
+            <kbd>/</kbd>
+          </form>
+          <button class="account-button" data-view="settings"><span class="account-avatar">M</span><span>Settings</span></button>
+        </header>
+        <div class="main-view" id="mainView" tabindex="-1"></div>
+      </main>
+
+      <aside class="detail-rail" aria-label="Player and queue">
+        <section class="player-panel">
+          <div class="rail-heading"><span>NOW PLAYING</span><div class="rail-tools"><button class="icon-action mobile-close-player" id="closeMobilePlayer" title="Close player" aria-label="Close player">×</button><button class="text-action" id="toggleLyrics" aria-expanded="false">Lyrics</button><button class="icon-action" id="openVideo" title="Open on YouTube" aria-label="Open on YouTube">↗</button></div></div>
+          <div class="cover-stage" id="nowPlayingCover"><div class="cover-placeholder" id="coverPlaceholder">♪</div><img id="coverImage" alt="" hidden /></div>
+          <div class="now-playing-meta"><strong id="nowPlayingTitle">Nothing playing</strong><span id="nowPlayingArtist">Your next track will appear here</span></div>
+          <div class="web-player-controls" id="playerControls">
+            <div class="transport-row">
+              <button class="player-control" id="previousTrack" title="Previous track" aria-label="Previous track">⏮</button>
+              <button class="player-control play-toggle" id="playPause" title="Play" aria-label="Play" disabled>▶</button>
+              <button class="player-control" id="nextTrack" title="Next in queue" aria-label="Next in queue">⏭</button>
+            </div>
+            <div class="seek-row"><span id="elapsedTime">0:00</span><input id="seekSlider" type="range" min="0" max="1000" value="0" aria-label="Seek" disabled /><span id="durationTime">0:00</span></div>
+            <div class="volume-row"><button class="icon-action" id="toggleMute" aria-label="Mute" title="Mute">◖</button><input id="volumeSlider" type="range" min="0" max="100" value="70" aria-label="Volume" /></div>
+          </div>
+          <div id="playerMount" class="player-mount" aria-hidden="true"></div>
+          <section class="lyrics-panel" id="lyricsPanel" aria-label="Lyrics" hidden>
+            <div class="lyrics-tools"><span id="lyricsProvider">Lyrics appear here when a track is selected.</span><button class="icon-action" id="reloadLyrics" title="Reload lyrics" aria-label="Reload lyrics">↻</button></div>
+            <div class="lyrics-content" id="lyricsContent"></div>
+          </section>
+        </section>
+        <section class="queue-panel">
+          <div class="rail-heading"><span>UP NEXT <span class="queue-count" id="queueCount">0</span></span><button class="text-action" id="clearQueue">Clear</button></div>
+          <div id="queueList" class="queue-list"></div>
+        </section>
+        <section class="rail-note"><span class="status-dot"></span><span>Playing through YouTube</span></section>
+      </aside>
+
+      <footer class="player-bar">
+        <div class="bar-track"><div class="bar-cover" id="barCover">♪</div><div class="bar-meta"><strong id="barTitle">Nothing playing</strong><span id="barArtist">Search to find music</span></div><button class="icon-action save-current" id="saveCurrent" title="Save to library" aria-label="Save to library">♡</button></div>
+        <div class="bar-center"><span class="playback-source">METROLIST PLAYER</span><span class="playback-note">Audio delivered by YouTube Music</span></div>
+        <div class="bar-actions"><button class="text-action" id="addCurrentQueue" aria-label="Add current track to queue">Add current to queue <span>＋</span></button><button class="icon-action mobile-open-player" id="openMobilePlayer" title="Open player and queue" aria-label="Open player and queue">⌃</button></div>
+      </footer>
+    </div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="app.js" type="module"></script>
+  </body>
+</html>
